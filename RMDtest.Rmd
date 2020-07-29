@@ -1,0 +1,22 @@
+---
+title: "RMDtest"
+author: "Manan Desai"
+date: "7/29/2020"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## This is a test of R Markdown for STA 380.
+
+```{r cars}
+summary(cars)
+```
+
+
+```{r pressure}
+plot(pressure)
+```
+
