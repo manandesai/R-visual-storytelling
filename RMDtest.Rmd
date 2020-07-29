@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 summary(cars)
 ```
 
+Here is a plot of vapor pressure of mercury as a function of temperature. 
 
 ```{r pressure}
 plot(pressure)
