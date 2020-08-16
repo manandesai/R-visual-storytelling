@@ -1,0 +1,504 @@
+---
+title: "Exercises"
+author: "Manan Desai"
+date: "8/4/2020"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(quantmod)
+library(foreach)
+library(mosaic)
+library(LICORS)
+library(reshape2)
+library(arules)
+library(tidyverse)
+library(arulesViz)
+```
+
+## Green Buildings
+
+The goal is to determine whether tenants will pay a premium to live in green-certified buildings. From the preliminary recommendation, it appears that they will. However, we need to make sure that there are no confounding variables at play.
+
+```{r}
+green <- read.csv("greenbuildings.csv")
+```
+
+First, we will try to see what variables have a significant impact on Rent. We do this by fitting a linear model to the data predicting Rent using all other variables (other than propertyID, cluster, LEED, and EnergyStar) as a predictor. We remove the LEED and EnergyStar variables because the green_rating column accounts for both of them. We will need to make the green_rating column a factor, however, instead of a numeric variable.
+
+```{r}
+green$green_rating <- factor(green$green_rating)
+M <- lm(Rent~., data=green[,c(3:11,14:23)])
+summary(M)
+```
+
+As seen from fitting the linear model, when accounting for the effect of all other variables in the dataset, we do not see a significant impact on Rent by green_rating. This implies that we do not have enough evidence to say that the coefficient for green_rating when predicting Rent is non-zero. The variables that definitely have an impact include size, class_a/b, gas/electricity costs, net contract, heating days, and cluster rent. It's possible that there may just be too many variables in the model that are overshadowing the impact of green_rating, so let's try fitting a simpler model. This model will only include green_rating, size, class a/b, cluster_rent, and gas/electricity costs.
+
+```{r}
+M2 <- lm(Rent~size+green_rating+class_a+class_b+cluster_rent+Electricity_Costs+Gas_Costs, data=green)
+summary(M2)
+```
+
+As shown from the output above, even in this simpler model green_rating does not have a significant impact on Rent. What the "on-staff stats guru" was seeing was most likely the effect of a confounding variable. What this means is that some of the other variables are bringing much more predictive power to the model than green_rating, rendering the effect of green_rating insignificant. However, when you look at just green_rating, it appears there is an effect though this effect is due to other hidden variables. To confirm this, let's look at a few plots.
+
+First, let's just look at the rent for non-green buildings and green buildings. This should visually lead us to the same conclusion that the "stats guru" reached. 
+
+```{r}
+ggplot(green, aes(x=Rent)) + geom_density(aes(fill=green_rating), alpha=0.25) + geom_vline(xintercept = median(green[which(green$green_rating == 0),]$Rent), color = "red", linetype = "dashed") + geom_vline(xintercept = median(green[which(green$green_rating == 1),]$Rent), color = "blue", linetype = "dashed") + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating", subtitle = "With Dashed Line Median") + labs(caption = paste0("Difference of medians: ", median(green[which(green$green_rating == 1),]$Rent) - median(green[which(green$green_rating == 0),]$Rent)))
+```
+
+We can indeed see that when just looking at green rating, it does appear the green buildings have a higher rent than non-green buildings. The dashed lines represent the medians, and there is the $2.6/sq.ft./year difference in rent prices. However, as shown green_rating being an insignificant predictor in the linear fits, we know there are other variables at work. Let's see if this association still holds when controlling for other variables. Let's first control for the class of the building. We need to create a 'Class' variable that can take either, A, B, or C as a value. This will simply be inferred from the class_a, and class_b columns. We then will plot the rent density plots again, but split up by each class.
+
+```{r}
+green$class_c = 0
+green[which((green$class_a == 0) & (green$class_b == 0)),"class_c"] = 1
+green[which(green$class_a==1),"Class"] = "A"
+green[which(green$class_b==1),"Class"] = "B"
+green[which(green$class_c==1),"Class"] = "C"
+green$Class <- factor(green$Class)
+
+#green <- green %>% group_by(Class, green_rating) %>% mutate(med = median(Rent))
+
+ggplot(green, aes(x=Rent)) + geom_density(aes(fill=green_rating), alpha=0.25) + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating for each Class") + facet_wrap(~Class, ncol=3) # + geom_vline(aes(xintercept = med, group = Class))
+```
+
+The plots show that for class A and B, the rent density plots are fairly similar. For class A, the two density plots almost overlap perfectly. Class B, the green buildings seem to have a slightly higher and later peak. However, class C has a large difference. It appears that green-rated buildings in Class C may command a steeper rent. This is pretty strange, given that A and B don't have much evidence of that. Let's look at the histogram version to see if there is anything strange quantity-related.
+
+```{r}
+ggplot(green, aes(x=Rent)) + geom_histogram(aes(fill=green_rating), alpha=0.25) + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating for each Class") + facet_wrap(~Class, ncol=3)
+```
+
+Looking at the histogram confirms that for class A and B, there doesn't seem to be much of a difference in rent because of its green status. The histograms also confirm why we were seeing such strange results for group C. It appears there is a very low quantity of green-rated buildings in class C which means that a density plot isn't a very good representation. There are so few green buildings in class C that it is probably unwise to even reach a conclusion about green buildings in class C.
+
+Let's check on the medians again, as that was the parameter chosen by the "stats guru" initially.
+
+```{r}
+median(green[which(green$Class=="A" & green$green_rating==1),"Rent"]) - median(green[which(green$Class=="A" & green$green_rating==0),"Rent"])
+
+median(green[which(green$Class=="B" & green$green_rating==1),"Rent"]) - median(green[which(green$Class=="B" & green$green_rating==0),"Rent"])
+```
+
+The median rent difference between green-rated buildings and non-green rated buildings in class A is 0.24 and the same measure for class B was 1.1. Both of these are less than half the size of the original 2.6 difference. This shows that controlling for just one variable, Class, has almost eliminated the impact of green_rating on rent. 
+
+At the risk of stretching our data too thin, let's also see if size, in conjunction with class, is making an impact. We first categorize all buildings and small, medium, or large based on their size. We make the groups so that each group has approximately the same number of buildings. We then look at rent price histograms for each combination of size and class.
+
+```{r}
+green$sizeCat <- (cut_number(green$size, 3, labels = c("small", "medium", "large")))
+ggplot(green, aes(x=Rent)) + geom_histogram(aes(fill=green_rating), alpha=0.25) + xlim(0,100) + ggtitle("Rent Density Plot by Green Rating for each Class and Size") + facet_wrap(Class~sizeCat, ncol=3)
+```
+
+For class A, we again so no substantial evidence that green-rated buildings command higher rent prices. The peaks of the histograms are in roughly the same place with similar distributions. For class B and C, it looks like we've probably stretched our data too thin and can't reach any real conclusions.
+
+##### Green Buildings Conclusion
+
+Overall, when we controlled for class, a lot of the impact of green_rating on rent prices vanished as shown through the density plots and histograms. This mirrors the fact that when we run a linear regression model with all predictors, or even just a handful of predictors, green_rating does not show as a significant variable. The stats guru claimed that green_rated buildings commanded higher rent than non-green rated buildings, but this conclusion is likely invalid. The real impact is likely due to confounding variables such as Class and Size. The fact that most green buildings are in class A alone means that they would have higher rent. That's why when we control for class, we see green_rating's impact on rent almost disappear.
+
+To conclude, there is not enough evidence to claim that green-rated buildings will rake in more money. However, it may still be worth building them if only to save the environment!
+
+## Flights at ABIA
+
+Let's look at the data containing every flight from Austin Bergstrom International Airport. Let's quickly see how the number of flights correlates to the month and the airline.
+
+```{r}
+ABIA <- read.csv("ABIA.csv")
+#replace NAs in delay columns with 0s
+ABIA[, 25:29][is.na(ABIA[, 25:29])] <- 0
+ggplot(ABIA, aes(factor(Month), fill=UniqueCarrier)) + geom_bar() + xlab("Month") + ylab("Number of Flights") + ggtitle("Number of Flights per Month from ABIA by Airline") 
+```
+
+This data is fairly predictable. There is an uptick in travel during the summer months, as to be expected with summer vacation and travel. Travel goes down during the later months. There's doesn't appear to be anything too unique about the air carrier activity by month.
+
+##### Examining Cancellations
+
+Let's look for any patterns and interesting findings regarding cancellations and delays at Austin-Bergstrom International Airport in 2008. First, we plot the number of cancellations by month in order to see when most cancellations occur. We also separate the counts by their cancellation code which was either "Carrier", "Weather", or "NAS".
+
+```{r}
+cancelled <- subset(ABIA, Cancelled == 1)
+ggplot(cancelled, aes(factor(Month), Cancelled, fill=CancellationCode)) + geom_bar(stat="identity") + ylab("Number of Cancelled Flights") + xlab("Month") + ggtitle("Number of Flight Cancellations per Month") + scale_fill_discrete(name = "Reason", labels = c("Carrier", "Weather", "NAS"))
+```
+
+This plot provides some interesting insights. Cancellations seem to peak from January to April, with March having the most cancellations in the entire year. March experiences a large number of weather-related cancellations, likely due to some winter weather nationwide. April, however, experiences a fairly low number of weather-related cancellations and a very high number of carrier cancellations.
+
+September is a surprising peak. Almost all cancellations are due to weather. This is likely due to hurricane season, especially Hurricane Ike in particular which struck mainland Texas.
+
+Month definitely makes a clear impact on cancellations, but does the day of the week?
+
+```{r}
+ggplot(cancelled, aes(factor(DayOfWeek), Cancelled, fill=CancellationCode)) + geom_bar(stat="identity") + ylab("Number of Cancelled Flights") + xlab("WeekDay") + ggtitle("Number of Flight Cancellations per Weekday") + scale_fill_discrete(name = "Reason", labels = c("Carrier", "Weather", "NAS"))
+```
+
+Mondays have a noticeable uptick in flight cancellations for some reason. However, the difference is not overwhelming, so this could just be a coincidence.
+
+Let's see which airlines are responsible for the most cancellations.
+
+```{r}
+ggplot(cancelled, aes(x=UniqueCarrier, y=Cancelled, fill=CancellationCode)) + geom_bar(stat="identity") + ggtitle("Flight Cancellations by Airline") + xlab("Airline") + ylab("Number of Cancelled Flights") + scale_fill_discrete(name = "Reason", labels = c("Carrier", "Weather", "NAS"))
+```
+
+It looks like American Airlines (AA) is responsible for the most cancellations, but it's possible that they also operate the most flights out of the airport. To be fair, let's look at cancellations as a proportion of total flights.
+
+```{r}
+cancelledAF <- data.frame(table(cancelled$UniqueCarrier)/table(ABIA$UniqueCarrier))
+ggplot(cancelledAF, aes(Var1,Freq, fill=Var1)) + geom_bar(stat="identity") + ggtitle("Flight Cancellations by Airline as a Proportion of Total Flights") + xlab("Airline") + ylab("Number of Cancelled Flights") + scale_fill_discrete(name = "Reason", labels = c("Carrier", "Weather", "NAS")) + guides(fill=FALSE)
+```
+
+I'm not familiar with MQ, but a quick search shows it might be Envoy Air. Whatever airline they are has a very high rate of cancellations, above 6%. This is a rate more than double that of the next airline, AA or American Airlines. Travellers may want to avoid booking flights with MQ and perhaps even American Airlines. Frontier (F9), Northwest Airlines, and US Airways have very few cancellations.
+
+##### Examining Delays in Flights leaving ABIA
+
+Let's pivot and look at delays instead of cancellations. For this, we'll only look at flights leaving Austin-Bergstrom International Airport in order to get a better sense of delays for flights leaving Austin. We'll consider any flight delayed over 5 minutes; passengers probably don't care about a couple minute holdup.
+
+```{r}
+depAustin <- subset(ABIA, Origin=="AUS")
+nrow(depAustin)
+delayAustin <- subset(depAustin, DepDelay > 5)
+nrow(delayAustin)
+```
+
+Out of 49,623 flights that left ABIA in 2008, 11,843 had a delay of over 5 minutes. Similar to cancellations, let's see which airline is responsible for the most delays.
+
+```{r}
+ggplot(delayAustin, aes(UniqueCarrier, fill=UniqueCarrier)) + geom_bar() + guides(fill=FALSE)
+```
+
+Looks like SouthWest Airlines (WN) is responsible for the most delays. But again, to be fair, we should take delays as a fraction of all departing flights.
+
+```{r}
+delayedAF <- data.frame(table(delayAustin$UniqueCarrier)/table(depAustin$UniqueCarrier))
+ggplot(delayedAF, aes(Var1, Freq, fill=Var1)) + geom_bar(stat="identity") + guides(fill=FALSE) + xlab("Airline") + ylab("Frequency") + ggtitle("Frequency of Delays of flights departing ABIA by Airline")
+```
+
+Looks like we were being a bit unfair to Southwest, though it does come in second for delays behind EV (ExpressJet). Let's look at how long these carriers' delays are. US airways and Endeavor (9E) have very few delays and could be a wise choise for travellers.
+
+```{r}
+ggplot(delayAustin, aes(UniqueCarrier, DepDelay)) + geom_boxplot(varwidth=T, fill="plum") + xlab("Carrier") + ylab("Delay") + ggtitle("Flight Delays by Airline Boxplot")
+```
+
+There are some astronomical delays. 9E had a delay clocking in at over 875 minutes, or over 14.5 hours. B6 had a delay clocking in at over 625 minutes or over 10 hours. It's possible that these could be errors from the data collection process.
+
+Something that could be interesting to see is whether a certain time of day is more susceptible to long delays. For this, we will divide the day into 4 equal parts: early morning (Midnight-6AM), morning (6AM to 12PM), afternoon (12PM to 6PM), and night (6PM to Midnight).
+
+```{r}
+delayAustin[which(delayAustin$DepTime <= 600),"DepPeriod"] <- "Early Morning"
+delayAustin[which(delayAustin$DepTime > 600 & delayAustin$DepTime <= 1200),"DepPeriod"] <- "Morning"
+delayAustin[which(delayAustin$DepTime > 1200 & delayAustin$DepTime <= 1800),"DepPeriod"] <- "Afternoon"
+delayAustin[which(delayAustin$DepTime > 1800 & delayAustin$DepTime <= 2400),"DepPeriod"] <- "Night"
+delayAustin$DepPeriod <- factor(delayAustin$DepPeriod, levels = c("Early Morning", "Morning", "Afternoon", "Night"), ordered = TRUE)
+ggplot(delayAustin, aes(DepPeriod, DepDelay)) + geom_boxplot(varwidth=T, fill="plum") + xlab("Time of Day") + ylab("Delay") + ggtitle("Flight Delays by Airline Boxplot") + ylim(0,500)
+```
+
+Early morning really doesn't have enough flights to make a statement about delays (as shown by the width of the box). While afternoon has the most delays, it appears nighttime flights do have a higher average delay than morning and afternoon, but not by a large amount. It's worth noting that the two outliers seen earlier are not shown in this plot because the y-axis was truncated for easier interpretation.
+
+Let's see if month or day of the week correlates to longer or more delays.
+
+```{r}
+ggplot(delayAustin, aes(factor(Month), fill=factor(DayOfWeek))) + geom_bar() + xlab("Month") + ylab("Number of Delays") + ggtitle("Number of Flight Delays by Month and Day of Week")
+```
+
+Comparing this plot to the earlier plot of cancellations, we can see that March has the most cancellations and delays. However, there are some interesting difference in other months. For example, May, June, and December had a fairly average number of cancellations. However, they have a very high number of delays. Furthermore, September had many flight cancellations but very few delays.
+
+Finally, let's see if the destination of the flight is correlated with flight delays departing ABIA. Let's look at the top 10 most delayed destinations. We'll also look at how long these delays usually are. For this, we'll classify delays as either short (<30 min), moderate (30-60 min), or long (>60 min).
+
+```{r}
+delayAustin[which(delayAustin$DepDelay <= 30),"DelayCat"] <- "Short"
+delayAustin[which(delayAustin$DepDelay > 30 & delayAustin$DepDelay <= 60),"DelayCat"] <- "Moderate"
+delayAustin[which(delayAustin$DepDelay > 60),"DelayCat"] <- "Long"
+delayAustin$DelayCat <- factor(delayAustin$DelayCat, levels = c("Short", "Moderate", "Long"), ordered = TRUE)
+dest10 <- names(head(sort(table(delayAustin$Dest), decreasing = TRUE), 10))
+dest10ss <- subset(delayAustin, Dest %in% dest10)
+ggplot(dest10ss, aes(Dest)) + geom_bar(fill="salmon") + xlab("Destination") + ylab("Number of Delays") + ggtitle("Number of Flight Delays by Destination and Length of Delay") + facet_wrap(~DelayCat, ncol=1)
+```
+
+It looks like both the airports in Dallas are responsible for the most short and moderate delays. This is to be expected due to the huge number of flights from Austin to Dallas. Interestingly, Chicago O'Hare (ORD) looks like it comes in 9th for short delays but 2nd for long delays, meaning that flights from ABIA to Chicago have a disproportionate number of long days. Travellers may want to be wary of travelling to Chicago.
+
+##### Wrapping Up
+
+We've found several interesting insights about cancellations and delays at Austin-Bergstrom International Airport in 2008. The winter months of January through March account for a lot of cancellations, many of which are weather-related. However, April has an alarming amount of Carrier-related cancellations. September also experienced a large number of cancellations, almost all weather-related, likely due to a rough hurricane season. Travellers have reason to be worried when travelling on Monday which had the most cancellations out of all weekdays. Travellers should be even more worried if they're travelling via MQ (Envoy Air) which has over 6% of its flights get cancelled! American Airlines has the second highest fraction of cancellations so it could be wise to avoid them as well. Frontier, Northwest, and US Airways have relatively few cancellations.
+
+As far as delays when leaving Austin, it appears that ExpressJet and Southwest lead the way after adjusting for quantity of total flights. US Airways and Endeavor have relatively few delays. US Airways begins to look like a good choice for travellers wanting to avoid cancellations and delays. Additionally, travellers should be wary of flying at night which has the longest average delays, though afternoons have the most delays. Additionally, while the early summer months of May, June, and July avoid a lot of cancellations, it appears that they experience a lot of delays. September, which had a large number of weather-related cancellations, had very few delays. Finally, while both Dallas airports lead the way in delays, it's due to the sheer number of flights that go from Austin to Dallas. However, travellers should be a little worried when travelling to Chicago O'Hare which has a large number of long (>60 min) delays.
+
+## Portfolio Modeling
+
+The goal here is to construct three different portfolios containing only exchange-traded funds and use bootstrap resampling to analyze the short-term risk, measured by 5% VAR or value-at-risk. The portfolio will begin with $100,000 in capital and will be traded for 20 days, where they are rebalanced at the end of every day so that the initial chosen ratios of funds hold.
+
+I chose three very different portfolios that bear a passing resemblance to different investment strategies. The first portfolio consists of VTI, VXUS, and BND. VTI seeks to track the performance of the total stock market. VXUS seeks to track the performance of international companies. Finally, BND seeks to track the performance of a broad, market-weight bond index. These three stocks are recommended very often to beginner investors and hands-off investors. This portfolio has exposure to US stocks, international stocks, and the US bond market, so it is regarded as a fairly low risk portfolio. The weights assigned to this portfolio are 50% VTI, 30% VXUS, 20% BND. This is a fairly common recommended ratio for younger investors as it maintains most of its exposure to the US and international stock market but still has some exposure to the bond market for stability.
+
+The second portfolio I constructed is a very tech-heavy portfolio. 40% of its weight goes towards VGT, the Vanguard Information Technology ETF containing a lot of exposure to companies like Apple and Microsoft. Another 20% is VOX, the Vanguard Communications ETF containing high exposure to Facebook, Google, Netflix, and Verizon. Another 20% is VCR, the Vanguard Consumer Discretionary ETF with high exposure to companies like Amazon and Tesla. Finally, the last 20% is PSI, the Invesco Dynamic Semiconductors ETF with exposure to chip companies like Nvidia, Qualcomm, and AMD.
+
+The third and last portfolio I constructed is a healthcare focused portfolio. As the saying goes, people will always get sick. 40% of this portfolio is VHT, the Vanguard Health Care ETF which holds over 300 US health firms including Johnson&Johnson, UnitedHealth, Merck, Pfizer, and AbbVie. Another 30% is weighted toward XBI, the SPDR S&P Biotech ETF which focuses on US biotech firms like Noravax and Invitae. The final 30% is IXJ, the iShares Global Healthcare ETF which provides exposure to international healthcare firms.
+
+Once we retrieve all the data for these ETFs, we adjust all of them for splits and dividends and trim the data to only contain the past 5 years, the time period we will be sampling from. We finally put all of these into three portfolio matrices for future sampling.
+
+```{r}
+#1 "safe" ETF portfolio
+portfolio1 = c("VTI", "VXUS", "BND")
+portfolio1_weights = c(0.5, 0.3, 0.2)
+#1 tech heavy ETF portfolio
+portfolio2 = c("VGT", "VOX", "VCR", "PSI")
+portfolio2_weights = c(0.4, 0.2, 0.2, 0.2)
+#1 healthcare and drug focused ETF
+# VHT - US healthcare
+# XBI biotech
+# IXJ - World healthcare
+portfolio3 = c("VHT", "XBI", "IXJ")
+portfolio3_weights = c(0.4, 0.3, 0.3)
+alltickers = c(portfolio1, portfolio2, portfolio3)
+getSymbols(alltickers)
+```
+
+```{r}
+#adjust for open, closing, split, dividends, etc for all stocks
+for(ticker in alltickers) {
+	expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+	eval(parse(text=expr))
+}
+```
+
+```{r}
+#We only want the data for the past 5 years
+alltickersa = c()
+for(ticker in alltickers) {
+  alltickersa = c(alltickersa, paste0(ticker,'a'))
+}
+for(tickera in alltickersa) {
+  expr = paste0(tickera, "=",tickera, "[paste0((Sys.Date()-(365.2422*5)-1),'/',Sys.Date()-1),]")
+  eval(parse(text=expr))
+}
+```
+
+```{r}
+returns1 = cbind(ClCl(VTIa),ClCl(VXUSa),ClCl(BNDa))
+returns1 = as.matrix(na.omit(returns1))
+returns2 = cbind(ClCl(VGTa),ClCl(VOXa),ClCl(VCRa),ClCl(PSIa))
+returns2 = as.matrix(na.omit(returns2))
+returns3 = cbind(ClCl(VHTa),ClCl(XBIa),ClCl(IXJa))
+returns3 = as.matrix(na.omit(returns3))
+```
+
+After all the portfolio selection and data preprocessing, we are finally able to run the bootstrap simulation for portfolio 1. We start with an initial wealth of $100000. We run 5000 bootstrap simulations of 20 days each, rebalancing the portfolio at the end of each day.
+
+```{r}
+set.seed(3)
+#portfolio 1
+initial_wealth = 100000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	#fairly normal recommended weights
+	#half vti, quarter vxus, 20% bonds
+	weights = portfolio1_weights
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns1, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+		#rebalance every day at end of day
+		holdings = weights * total_wealth
+	}
+	wealthtracker
+}
+ggplot() + geom_histogram(aes(sim1[,n_days]), binwidth = 1000, color="blue") + xlab("Final Portfolio Value")
+mean(sim1[,n_days]); median(sim1[,n_days]); sd(sim1[,n_days])
+# 5% VAR
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+```
+
+From the histogram, we can see that the majority of simulations finish with the final portfolio value above the initial value of 100,000. In fact, both the mean and the median are at least 800 dollars over. The standard deviation is around 4366 dollars. The value of interest, however, is the 5% value-at-risk. This is calculated to be around -6444 dollars, meaning that 5% of the time, this set of investments lost more than that value over a 20 days period.
+
+We then duplicate the process for the second portfolio.
+
+```{r}
+set.seed(3)
+#portfolio 2
+initial_wealth = 100000
+sim2 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	#most weight in VGT and split even otherwise
+	weights = portfolio2_weights
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns2, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+		#rebalance every day at end of day
+		holdings = weights * total_wealth
+	}
+	wealthtracker
+}
+ggplot() + geom_histogram(aes(sim2[,n_days]), binwidth = 1000, color="blue")
+# 5% VAR
+mean(sim2[,n_days]); median(sim2[,n_days]); sd(sim2[,n_days])
+quantile(sim2[,n_days]- initial_wealth, prob=0.05)
+```
+
+The second portfolio has a slightly wider distribution than the first portfolio as shown by the histogram and by the standard deviation of about 6384 dollars. On average, the portfolio performs better than the first, with a mean and median of over 1700 dollars higher than the starting amount. However, the 5% value-at-risk is also higher, at around -8708 dollars, meaning that 5% of the time, this set of investments lost more than 8708 dollars over a 20 days period.
+
+Finally, we repeat this process for the third portfolio.
+
+```{r}
+set.seed(3)
+#portfolio 2
+initial_wealth = 100000
+sim3 = foreach(i=1:5000, .combine='rbind') %do% {
+	total_wealth = initial_wealth
+	#weighted a little in favor of US healthcare
+	weights = portfolio3_weights
+	holdings = weights * total_wealth
+	n_days = 20
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns3, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		total_wealth = sum(holdings)
+		wealthtracker[today] = total_wealth
+		#rebalance every day at end of day
+		holdings = weights * total_wealth
+	}
+	wealthtracker
+}
+ggplot() + geom_histogram(aes(sim3[,n_days]), binwidth = 1000, color="blue")
+mean(sim3[,n_days]); median(sim3[,n_days]); sd(sim3[,n_days])
+# 5% VAR
+quantile(sim3[,n_days]- initial_wealth, prob=0.05)
+```
+
+The ending values of this portfolio has a very different distribution from the first two which a very prominent right skew. There is even an ending portfolio value of over 300000 dollars! This variability is shown by the standard deviation of almost 11000, the highest seen by far. The portfolio performs well on average with a median of over 1250 dollars higher than the starting value. The mean is even higher due to the right skew. The 5% value-at-risk is the highest seen yet at around -8928 dollars. This means that 5% of the time, this portfolio loses over 8928 dollars over a 20 day period.
+
+Overall, this analysis shows the tradeoff of risk and reward in the market. The first portfolio is the safest, with exposure to the entire market and exposure to the bond market, a historically safe investment. For this reason, its returns are usually not exceptional but they are also not very volatile as shown by the fairly low 5% value-at-risk. The second portfolio, with exposure to various facets of technology, performed better on average than the first but also carried a higher risk with a 5% value-at-risk almost 2000 dollars higher than the first. Technology is usually regarded as a good risk for growth investors due to the high valuations and growth of FAANG-type stocks. However, we can see exposure to only one sector does carry more risk than a more balanced approach like portfolio 1. Finally, the third portfolio had the greatest volatility. Some simulations even had the portfolio doubling or tripling its value after 20 days, an incredible outcome. However, it also had the highest 5% value-at-risk and standard deviation meaning that it carried the most risk and volatility out of all portfolios. This mirrors the overall nature of healthcare investments. Healthcare, especially biotech firms, are regarded as very risky and volatile investments and is prone to huge swings dependent on events such as FDA approval or denial. This can lead to some huge wins but also very substantial losses.
+
+## Market Segmentation
+
+In order to generate some insights about segments within NutrientH20s audience, we will create clusters of similar users so that they have unique groups for which they can generate tailor-made marketing approaches. First, we need to clean the data a little bit. We remove all users that have tweeted spam or adult content because we want to ensure there are no bots in the dataset and any adult content is not very useful for marketing insights. We also remove the spam and adult columns completely. Finally, we remove the chatter and uncategorized columns as well because they will not provide us a lot of information when creating unique market segments. We then scale and center all attributes so their impact on any models are fair and equal.
+
+```{r}
+#preprocessing
+smark <- read.csv("social_marketing.csv", row.names = 1)
+smark <- smark[-which((smark$spam > 0) | (smark$adult > 0)),]
+smark <- smark[ , !(names(smark) %in% c("spam", "adult", "chatter", "uncategorized"))]
+smark_avg <- data.frame(apply(smark,2,mean))
+smark_avg$cat <- rownames(smark_avg); rownames(smark_avg) <- NULL; colnames(smark_avg) <- c("mean", "cat")
+smark_scaled <- scale(smark, center = TRUE, scale = TRUE)
+mu = attr(smark_scaled,"scaled:center")
+sigma = attr(smark_scaled,"scaled:scale")
+```
+
+In order to generate clusters using a kmeans approach, we need to determine how many clusters to use. We don't want too many because it will be hard for NutrientH20s marketing team to develop too many marketing campaigns. However, we don't want to few because targeted marketing only works if the groups are unique enough. We first attempt to create an elbow plot to find an optimal number of clusters.
+
+```{r}
+set.seed(3)
+k_grid <- seq(2,20,by=1)
+SSE_grid <- foreach(k=k_grid, .combine = 'c') %do% {
+  cluster_k = kmeans(smark_scaled,k,nstart=25)
+  cluster_k$tot.withinss
+}
+plot(k_grid, SSE_grid)
+```
+
+Unfortunately, this elbow plot doesn't have much of an elbow. Let's see if the CH index will give us a clearer picture for how many clusters to choose.
+
+```{r warning=FALSE}
+set.seed(3)
+N = nrow(smark_scaled)
+CH_grid = foreach(k = k_grid, .combine = 'c') %do% {
+  cluster_k = kmeans(smark_scaled, k, nstart = 25)
+  W = cluster_k$tot.withinss
+  B = cluster_k$betweenss
+  CH = (B/W) * ( (N-k)/(k-1) )
+  CH
+}
+plot(k_grid, CH_grid)
+```
+
+It looks like 3, 4, or 5 clusters might be a good start. Let's choose 5 because that 5 different marketing groups seems like a good compromise between uniqueness of groups and difficulty of creating different campaigns. NutrientH20s marketing team should be able to work with 5 groups of unique users in their audience.
+
+We fit a kmeans model with 5 clusters on the scaled data, and then unscale the cluster centers to get a representation of our clusters in the original domain. In order to determine which qualities of each cluster are unique, we plot the average topic values for each cluster against the average topic values for the entire dataset. This will show how cluster stand out against each other and against the general audience.
+
+```{r}
+set.seed(3)
+clust1 <- kmeans(smark_scaled, 5, nstart = 25)
+unscaled <- clust1$centers*sigma + mu
+for(i in 1:nrow(unscaled)){
+  clustmeans <- unscaled[i,]
+  smark_avg[,paste0('Cluster ',i)] <- clustmeans
+  dfmelt <- melt(smark_avg, id.vars='cat')
+  smark_avg[,paste0('Cluster ',i)] <- NULL
+  print(ggplot(dfmelt,aes(x = cat,y = value, fill = variable)) + geom_bar(stat="identity", position = "dodge") + coord_flip() + ylab("Category") + xlab("Mean/Cluster Center") + ggtitle(paste0("Cluster ",i)))
+}
+```
+
+There are several interesting insights here. Cluster 1 seems to include a lot of music fans as tweets about music appear over twice as many times from the users in Cluster 1 as they do on average in the whole dataset. Users in this cluster also have distinctly low interest/activity in personal fitness, photo sharing, politics, and sports fandom. Therefore, a marketing approach focusing on music and avoiding fitness, politics, and sports would be a good idea to target this group.
+
+Users in Cluster 2 have an overwhelming amount of tweets about school. They also have a distinct interest in family and parenting. NutrientH20 should consider a marketing approach targeting these interests such as a campaign about how their product is the perfect beverage to take to school.
+
+Cluster 3 has a lot of tweets about automotives and playing sports. This could be an interesting subset of users for NutrientH20 to market towards. Users in this cluster also seem to have an interest in news, politics, and current events. While the latter topics might not make for a promising marketing campaign, it could be useful information to have.
+
+Users in the fourth cluster seem to have an interest in beauty, business, fashion, music, and photo-sharing. Most of these interests are very related to each other, so NutrientH20 could form a very targeted marketing campaign to appeal to users in this group.
+
+Finally, Cluster 5 has users who tweet a lot about health, nutrition, food, and crafts. This should be a great group for NutrientH20 to target because it seems to contain a lot of health-conscious individuals and food-lovers. If NutrientH20 can market their product as a nutritious and healthy option for hydration, they should appeal to users in this group.
+
+Overall, these 5 clusters are all fairly unique and provide NutrientH20 with very interest market segments. They can definitely create approaches to appeal to users based on which group they are in and what interests they have.
+
+## Author Attribution
+
+```{r}
+
+```
+
+
+## Association Rule Mining
+
+Let's take a look at grocery baskets and see if we can find any useful associations. We will look for all rules with a support over 0.005, a confidence of at least 0.1, and a maximum length of 5. The support level means that the items in the rule must appear in at least .5% of grocery baskets. We set this level so that we see rules that are useful and insightful and not very rare purchases. If we wanted to place products based on these rules, we would not want to make decisions on what a very small fraction of customers (less than 0.5%) want. Next, the confidence of at least 0.15 means that at least 15% of customers that buy the product(s) on the left hand side of the rule will buy the product(s) on the right hand side. We set this for a similar reason: we want meaningful correlations. Finally, we set the maximum length to 4 to limit the basket size. It's a lot harder to interpret and gather insights from very large baskets, so we would prefer to only be looking at a few items every time.
+
+```{r}
+groceries <- read.transactions("groceries.txt", header = FALSE, sep=",")
+groceryrules = apriori(groceries, parameter=list(support=.005, confidence=.15, maxlen=4))
+length(groceryrules)
+```
+
+Looks like we end with 1162 rules. Let's take a look at some of the most common baskets, that is the rules with the highest support.
+
+
+```{r}
+topsupport <- sort(groceryrules, decreasing = TRUE, by = "support")
+inspect(head(topsupport,10))
+```
+
+Looks like the most common basket is one containing whole milk. Over 25% of consumers purchase whole milk!
+The next most common are 'other vegetables', rolls/buns, and soda, and these are all single-item baskets. Then, we see some baskets with two items. Consumers buy 'other vegetables' and whole milk together over 7% of the time, and they buy whole milk and rolls/buns together over 5% of the time. The confidence on these rules are moderately high, showing that customers that buy the left hand side items are buying the right hand side items fairly often. However, the lifts are fairly low, showing that these rules aren't giving us a lot of meaningful insights even when we know a customer has the left-hand-side item in their basket. Consumers just buy these items a lot for the most part.
+
+Let's take a look at some of the high confidence rules.
+
+```{r}
+topconf <- sort(groceryrules, decreasing = TRUE, by = "confidence")
+inspect(head(topconf,10))
+```
+
+These rules provide some interesting insights that could definitely help a store place products. For example, the fifth rule tells us that when a customer buys butter and yogurt, they also buy whole milk almost 64% of the time. The lift tells us that there's a 250% increase in expectation that someone will buy milk if we know that they have butter and yogurt in their cart. Stores should probably keep these products close together. We can notice that all 10 of these rules contain whole milk. This is because people buy whole milk a lot; we already saw that when looking at the highest support rules. In order to get the most interesting and actionable insights, we should look at some of the rules with the highest lift.
+
+```{r}
+toplift <- sort(groceryrules, decreasing = TRUE, by = "lift")
+inspect(head(toplift,10))
+```
+
+Now we're seeing some really interesting associations. The highest-lift rule tells us that there's a 464% increase in expectation that someone will buy white bread if they buy ham. This makes sense as they're probably gonna make a lunch sandwich. The 4th rule tells us that there's a 395% increase in expectation that someone will buy root vegetables if they buy herbs. They're probably going to make a vegetable focused dinner. The 6th rule reveals that there is a 379% increase in expectation that someone will buy whipped/sour cream if they buy berries. These customers are likely on their way to make a parfait! This grocery store would be wise to position items in the baskets on this list close together so that there is as little friction as possible for customers to get what they need. It might also spark the thoughts of customers who weren't even looking for those items. For example, if a customer walked buy some ham and white bread next to each other, it might jog their memory that they need a lunch for work next week.
+
+Let's try to visualize clusters of items by creating a graph.
+
+```{r}
+saveAsGraph(head(groceryrules, n = 1000, by = "lift"), file = "groceryrules.graphml")
+```
+
+
+![Graph of Grocery Rules](graphpic1.png)
+
+As seen in the image above, there are definitely some distinct clusters appearing from the association rules. It looks like there are two large clusters in the middle, then some medium-sized clusters surrounding them. The larger the cluster, the more rules it likely appears in and the more crucial it is to the entire network. Let's add some labels so we can see what items are in the clusters.
+
+![Graph of Grocery Rules with Labels](graphpic2.png)
+
+We can now see that the two biggest clusters are centered on whole milk and other vegetables. This is to be expected as these two items were present in many of the baskets. The medium-sized clusters include one with yogurt, one with tropical fruit, one with root vegetables, and one with rolls/buns. Some smaller clusters include sausage, sodas, whipped/sour cream and bottled water. This graph gives us a good view of which items are popular and important in the grocery store. The bigger the text label, the higher the degree of the node, meaning the more association rules it is a part of. Also the position of the items reveals some insights as well. Fruit is close to both yogurt and whipped/sour cream indicating that it is often purchased with those items. This is due to people making parfaits and similar meals. Rolls/buns is close to the meat cluster and the soda cluster. This is a class American meal. Vegetables are fairly close to fruit as well as signify a likely association among health-conscious shoppers. Overall, looking at support/confidence/lift and the accompanying graph visualization can really help this grocery store decide how to advertise to its consumers and position items within the store to make sure customers can know and easily get to what they need.
