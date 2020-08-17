@@ -15,6 +15,12 @@ library(reshape2)
 library(arules)
 library(tidyverse)
 library(arulesViz)
+library(tm)
+library(kknn)
+library(randomForest)
+library(tree)
+library(rpart)
+library(glmnet)
 ```
 
 ## Green Buildings
@@ -48,7 +54,7 @@ First, let's just look at the rent for non-green buildings and green buildings. 
 ggplot(green, aes(x=Rent)) + geom_density(aes(fill=green_rating), alpha=0.25) + geom_vline(xintercept = median(green[which(green$green_rating == 0),]$Rent), color = "red", linetype = "dashed") + geom_vline(xintercept = median(green[which(green$green_rating == 1),]$Rent), color = "blue", linetype = "dashed") + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating", subtitle = "With Dashed Line Median") + labs(caption = paste0("Difference of medians: ", median(green[which(green$green_rating == 1),]$Rent) - median(green[which(green$green_rating == 0),]$Rent)))
 ```
 
-We can indeed see that when just looking at green rating, it does appear the green buildings have a higher rent than non-green buildings. The dashed lines represent the medians, and there is the $2.6/sq.ft./year difference in rent prices. However, as shown green_rating being an insignificant predictor in the linear fits, we know there are other variables at work. Let's see if this association still holds when controlling for other variables. Let's first control for the class of the building. We need to create a 'Class' variable that can take either, A, B, or C as a value. This will simply be inferred from the class_a, and class_b columns. We then will plot the rent density plots again, but split up by each class.
+We can indeed see that when just looking at green rating, it does appear the green buildings have a higher rent than non-green buildings. The dashed lines represent the medians, and there is the $2.6/sq.ft./year difference in rent prices. However, as shown by green_rating being an insignificant predictor in the linear fits, we know there are other variables at work. Let's see if this association still holds when controlling for other variables. Let's first control for the class of the building. We need to create a 'Class' variable that can take either, A, B, or C as a value. This will simply be inferred from the class_a, and class_b columns. We then will plot the rent density plots again, but split up by each class.
 
 ```{r}
 green$class_c = 0
@@ -92,7 +98,7 @@ For class A, we again so no substantial evidence that green-rated buildings comm
 
 ##### Green Buildings Conclusion
 
-Overall, when we controlled for class, a lot of the impact of green_rating on rent prices vanished as shown through the density plots and histograms. This mirrors the fact that when we run a linear regression model with all predictors, or even just a handful of predictors, green_rating does not show as a significant variable. The stats guru claimed that green_rated buildings commanded higher rent than non-green rated buildings, but this conclusion is likely invalid. The real impact is likely due to confounding variables such as Class and Size. The fact that most green buildings are in class A alone means that they would have higher rent. That's why when we control for class, we see green_rating's impact on rent almost disappear.
+Overall, when we controlled for class, a lot of the impact of green_rating on rent prices vanished as shown through the density plots and histograms. This mirrors the fact that when we run a linear regression model with all predictors, or even just a handful of predictors, green_rating does not show as a significant variable. The stats guru claimed that green_rated buildings commanded higher rent than non-green rated buildings, but this conclusion is likely invalid. The real impact is likely due to confounding variables such as Class and Size. The fact that most green buildings are in class A alone means that they would have higher rent right off the bat. That's why when we control for class, we see green_rating's impact on rent almost disappear.
 
 To conclude, there is not enough evidence to claim that green-rated buildings will rake in more money. However, it may still be worth building them if only to save the environment!
 
@@ -143,7 +149,7 @@ cancelledAF <- data.frame(table(cancelled$UniqueCarrier)/table(ABIA$UniqueCarrie
 ggplot(cancelledAF, aes(Var1,Freq, fill=Var1)) + geom_bar(stat="identity") + ggtitle("Flight Cancellations by Airline as a Proportion of Total Flights") + xlab("Airline") + ylab("Number of Cancelled Flights") + scale_fill_discrete(name = "Reason", labels = c("Carrier", "Weather", "NAS")) + guides(fill=FALSE)
 ```
 
-I'm not familiar with MQ, but a quick search shows it might be Envoy Air. Whatever airline they are has a very high rate of cancellations, above 6%. This is a rate more than double that of the next airline, AA or American Airlines. Travellers may want to avoid booking flights with MQ and perhaps even American Airlines. Frontier (F9), Northwest Airlines, and US Airways have very few cancellations.
+I'm not familiar with MQ, but a quick search shows it might be Envoy Air. Whatever airline they are has a very high rate of cancellations, above 6%. This is a rate more than double that of the next airline, AA or American Airlines. Travellers may want to avoid booking flights with MQ and perhaps even American Airlines. On the other hand, Frontier (F9), Northwest Airlines, and US Airways have very few cancellations.
 
 ##### Examining Delays in Flights leaving ABIA
 
@@ -169,7 +175,7 @@ delayedAF <- data.frame(table(delayAustin$UniqueCarrier)/table(depAustin$UniqueC
 ggplot(delayedAF, aes(Var1, Freq, fill=Var1)) + geom_bar(stat="identity") + guides(fill=FALSE) + xlab("Airline") + ylab("Frequency") + ggtitle("Frequency of Delays of flights departing ABIA by Airline")
 ```
 
-Looks like we were being a bit unfair to Southwest, though it does come in second for delays behind EV (ExpressJet). Let's look at how long these carriers' delays are. US airways and Endeavor (9E) have very few delays and could be a wise choise for travellers.
+Looks like we were being a bit unfair to Southwest, though it does come in second for delays behind EV (ExpressJet). US airways and Endeavor (9E) have very few delays and could be a wise choise for travellers. Let's look at how long these carriers' delays are.
 
 ```{r}
 ggplot(delayAustin, aes(UniqueCarrier, DepDelay)) + geom_boxplot(varwidth=T, fill="plum") + xlab("Carrier") + ylab("Delay") + ggtitle("Flight Delays by Airline Boxplot")
@@ -210,7 +216,7 @@ dest10ss <- subset(delayAustin, Dest %in% dest10)
 ggplot(dest10ss, aes(Dest)) + geom_bar(fill="salmon") + xlab("Destination") + ylab("Number of Delays") + ggtitle("Number of Flight Delays by Destination and Length of Delay") + facet_wrap(~DelayCat, ncol=1)
 ```
 
-It looks like both the airports in Dallas are responsible for the most short and moderate delays. This is to be expected due to the huge number of flights from Austin to Dallas. Interestingly, Chicago O'Hare (ORD) looks like it comes in 9th for short delays but 2nd for long delays, meaning that flights from ABIA to Chicago have a disproportionate number of long days. Travellers may want to be wary of travelling to Chicago.
+It looks like both the airports in Dallas are responsible for the most short and moderate delays. This is to be expected due to the huge number of flights from Austin to Dallas. Interestingly, Chicago O'Hare (ORD) looks like it comes in 9th for short delays but 2nd for long delays, meaning that flights from ABIA to Chicago have a disproportionate number of long delays. Travellers may want to be wary of travelling to Chicago.
 
 ##### Wrapping Up
 
@@ -306,7 +312,7 @@ mean(sim1[,n_days]); median(sim1[,n_days]); sd(sim1[,n_days])
 quantile(sim1[,n_days]- initial_wealth, prob=0.05)
 ```
 
-From the histogram, we can see that the majority of simulations finish with the final portfolio value above the initial value of 100,000. In fact, both the mean and the median are at least 800 dollars over. The standard deviation is around 4366 dollars. The value of interest, however, is the 5% value-at-risk. This is calculated to be around -6444 dollars, meaning that 5% of the time, this set of investments lost more than that value over a 20 days period.
+From the histogram, we can see that the majority of simulations finish with the final portfolio value above the initial value of 100,000. In fact, both the mean and the median are at least 800 dollars over. The standard deviation is around 4366 dollars. The value of interest, however, is the 5% value-at-risk. This is calculated to be around -6444 dollars, meaning that 5% of the time, this set of investments lost more than that value over a 20 day period.
 
 We then duplicate the process for the second portfolio.
 
@@ -368,9 +374,11 @@ mean(sim3[,n_days]); median(sim3[,n_days]); sd(sim3[,n_days])
 quantile(sim3[,n_days]- initial_wealth, prob=0.05)
 ```
 
-The ending values of this portfolio has a very different distribution from the first two which a very prominent right skew. There is even an ending portfolio value of over 300000 dollars! This variability is shown by the standard deviation of almost 11000, the highest seen by far. The portfolio performs well on average with a median of over 1250 dollars higher than the starting value. The mean is even higher due to the right skew. The 5% value-at-risk is the highest seen yet at around -8928 dollars. This means that 5% of the time, this portfolio loses over 8928 dollars over a 20 day period.
+The ending values of this portfolio has a very different distribution from the first two with a very prominent right skew. There is even an ending portfolio value of over 300000 dollars! This variability is shown by the standard deviation of almost 11000, the highest seen by far. The portfolio performs well on average with a median of over 1250 dollars higher than the starting value. The mean is even higher due to the right skew. The 5% value-at-risk is the highest seen yet at around -8928 dollars. This means that 5% of the time, this portfolio loses over 8928 dollars over a 20 day period.
 
-Overall, this analysis shows the tradeoff of risk and reward in the market. The first portfolio is the safest, with exposure to the entire market and exposure to the bond market, a historically safe investment. For this reason, its returns are usually not exceptional but they are also not very volatile as shown by the fairly low 5% value-at-risk. The second portfolio, with exposure to various facets of technology, performed better on average than the first but also carried a higher risk with a 5% value-at-risk almost 2000 dollars higher than the first. Technology is usually regarded as a good risk for growth investors due to the high valuations and growth of FAANG-type stocks. However, we can see exposure to only one sector does carry more risk than a more balanced approach like portfolio 1. Finally, the third portfolio had the greatest volatility. Some simulations even had the portfolio doubling or tripling its value after 20 days, an incredible outcome. However, it also had the highest 5% value-at-risk and standard deviation meaning that it carried the most risk and volatility out of all portfolios. This mirrors the overall nature of healthcare investments. Healthcare, especially biotech firms, are regarded as very risky and volatile investments and is prone to huge swings dependent on events such as FDA approval or denial. This can lead to some huge wins but also very substantial losses.
+##### Portfolio Modeling Conclusions
+
+Overall, this analysis shows the tradeoff of risk and reward in the market. The first portfolio is the safest, with exposure to the entire market and exposure to the bond market, a historically safe investment. For this reason, its returns are usually not exceptional but they are also not very volatile as shown by the fairly low 5% value-at-risk. The second portfolio, with exposure to various facets of technology, performed better on average than the first but also carried a higher risk with a 5% value-at-risk almost 2000 dollars higher than the first. Technology is usually regarded as a good risk for growth investors due to the high valuations and growth of FAANG-type stocks. However, we can see that exposure to only one sector does carry more risk than a more balanced approach like portfolio 1. Finally, the third portfolio had the greatest volatility. Some simulations even had the portfolio doubling or tripling its value after 20 days, an incredible outcome. However, it also had the highest 5% value-at-risk and standard deviation meaning that it carried the most risk and volatility out of all portfolios. This mirrors the overall nature of healthcare investments. Healthcare, especially biotech firms, are regarded as very risky and volatile investments and is prone to huge swings dependent on events such as FDA approval or denial. This can lead to some huge wins but also very substantial losses.
 
 ## Market Segmentation
 
@@ -415,9 +423,9 @@ CH_grid = foreach(k = k_grid, .combine = 'c') %do% {
 plot(k_grid, CH_grid)
 ```
 
-It looks like 3, 4, or 5 clusters might be a good start. Let's choose 5 because that 5 different marketing groups seems like a good compromise between uniqueness of groups and difficulty of creating different campaigns. NutrientH20s marketing team should be able to work with 5 groups of unique users in their audience.
+It looks like 3, 4, or 5 clusters might be a good start. Let's choose 5 because 5 different marketing groups seems like a good compromise between uniqueness of groups and difficulty of creating different campaigns. NutrientH20s marketing team should be able to work with 5 groups of unique users in their audience.
 
-We fit a kmeans model with 5 clusters on the scaled data, and then unscale the cluster centers to get a representation of our clusters in the original domain. In order to determine which qualities of each cluster are unique, we plot the average topic values for each cluster against the average topic values for the entire dataset. This will show how cluster stand out against each other and against the general audience.
+We fit a kmeans model with 5 clusters on the scaled data, and then unscale the cluster centers to get a representation of our clusters in the original domain. In order to determine which qualities of each cluster are unique, we plot the average topic values for each cluster against the average topic values for the entire dataset. This will show how clusters stand out against each other and against the general audience.
 
 ```{r}
 set.seed(3)
@@ -442,18 +450,155 @@ Users in the fourth cluster seem to have an interest in beauty, business, fashio
 
 Finally, Cluster 5 has users who tweet a lot about health, nutrition, food, and crafts. This should be a great group for NutrientH20 to target because it seems to contain a lot of health-conscious individuals and food-lovers. If NutrientH20 can market their product as a nutritious and healthy option for hydration, they should appeal to users in this group.
 
-Overall, these 5 clusters are all fairly unique and provide NutrientH20 with very interest market segments. They can definitely create approaches to appeal to users based on which group they are in and what interests they have.
+Overall, these 5 clusters are all fairly unique and provide NutrientH20 with very interest market segments. They can definitely create approaches to appeal to users based on which group they are in and what interests they have. If NutrientH20s marketing team can handle more clusters, this analysis could be rerun to make more clusters that would be even more targeted.
 
 ## Author Attribution
 
-```{r}
+To get started, we have to do a lot of data wrangling here. First, we need to get all these documents into a dataframe that would be appropriate for running some analysis on. The end goal here is a dataframe with one column being the author name as a factor and then the remaining columns being the full tf-idf vector for that document. This first step is to read in each document and concatenate all the text that document contains as one long string. We then create a Corpus from that document string and make all words lowercase, remove numbers, remove punctuation, and strip whitespace. We end by removing stop words, using a basic English stop words package. This removes filler words like "the", "for", etc. These words don't give us much predictive power. We then create a Document Term Matrix out of the remaining terms and remove sparse terms using a 95% threshold. We then finally create a TF-IDF matrix from these documents and add them to a dataframe with the author as the first column.
 
+```{r}
+readerPlain = function(fname){
+				readPlain(elem=list(content=readLines(fname)), 
+							id=fname, language='en') }
+
+#get all authors for the documents
+authors <- rep("", 50)
+i <- 1
+for (f in Sys.glob('./ReutersC50/C50train/*')){
+  authors[i] <- tail(strsplit(f, "/")[[1]], 1)
+  i <- i+1
+}
+#since each author has 50 documents, we need to replicate each author 50 times for the dataframe
+authors <- rep(authors, each=50)
+
+#instantiate dataframe with first column being authors
+train_df <- data.frame(author=authors, txt=rep("", 2500), stringsAsFactors = FALSE)
+
+#add in text for each document after concatening all lines with a space
+file_list_train = Sys.glob('./ReutersC50/C50train/*/*.txt')
+trainfiles = lapply(file_list_train, readerPlain)
+for(i in 1:length(trainfiles)){
+  contentvec <- trainfiles[[i]]$content
+  train_df[i,2] <- paste(contentvec, collapse = " ")
+}
+
+#text preprocessing, explained above
+documents_raw_train = Corpus(VectorSource(train_df$txt))
+my_documents_train = documents_raw_train %>%
+  tm_map(content_transformer(tolower))  %>%
+  tm_map(content_transformer(removeNumbers)) %>%      
+  tm_map(content_transformer(removePunctuation)) %>%  
+  tm_map(content_transformer(stripWhitespace)) 
+my_documents_train = tm_map(my_documents_train, content_transformer(removeWords), stopwords("en"))
+DTM_train = DocumentTermMatrix(my_documents_train)
+DTM_train = removeSparseTerms(DTM_train, 0.95)
+tfidf_train = as.matrix(weightTfIdf(DTM_train))
+
+#create the final dataframe with the author as a factor and the tf-idf matrix
+train_full <- cbind(train_df, tfidf_train)
+train_full <- train_full[,-2] #drop the column with the full text
+train_full$author <- factor(train_full$author)
+```
+
+Let's see what a small window of this dataframe looks like now.
+
+```{r}
+train_full[48:52,1:5]
 ```
 
 
+We also need to do this to the test documents so that they can be inputted into the predictive model that we create. We follow a very similar process, with one difference. When removing sparse terms, we use a 98% threshold. This saves more of the terms. The reason for doing this is that we next have to remove all terms that did not appear in the train documents. We lose predictive power doing this, so we want to make sure we retain as many terms as possible.
+
+Removing all terms from the test documents that did not appear in the train documents allows us to run the predictive models on the train data. However, we lose a lot of information when we do that. There are workarounds such as creating a "not-seen-before" word column, but I thought simply removing the words that did not appear in the test document was a fair compromise.
+
+```{r}
+authors <- rep("", 50)
+i <- 1
+for (f in Sys.glob('./ReutersC50/C50test/*')){
+  authors[i] <- tail(strsplit(f, "/")[[1]], 1)
+  i <- i+1
+}
+authors <- rep(authors, each=50)
+
+test_df <- data.frame(author=authors, txt=rep("", 2500), stringsAsFactors = FALSE)
+
+file_list_test = Sys.glob('./ReutersC50/C50test/*/*.txt')
+testfiles = lapply(file_list_test, readerPlain)
+for(i in 1:length(testfiles)){
+  contentvec <- testfiles[[i]]$content
+  test_df[i,2] <- paste(contentvec, collapse = " ")
+}
+
+documents_raw_test = Corpus(VectorSource(test_df$txt))
+my_documents_test = documents_raw_test %>%
+  tm_map(content_transformer(tolower))  %>%
+  tm_map(content_transformer(removeNumbers)) %>%      
+  tm_map(content_transformer(removePunctuation)) %>%  
+  tm_map(content_transformer(stripWhitespace)) 
+my_documents_test = tm_map(my_documents_test, content_transformer(removeWords), stopwords("en"))
+DTM_test = DocumentTermMatrix(my_documents_test)
+DTM_test = removeSparseTerms(DTM_test, 0.98)
+tfidf_test = as.matrix(weightTfIdf(DTM_test))
+
+#only retain columns that are present in the test dataframe
+tfidf_test <- tfidf_test[, intersect(colnames(tfidf_train), colnames(tfidf_test))]
+
+test_full <- cbind(test_df, tfidf_test)
+test_full <- test_full[,-2] #drop the column with the full text
+test_full$author <- factor(test_full$author)
+```
+
+We can now start building some predictive models! The first model we will try is a k-nearest-neighbors model. We will try different values of k among 5,10,15,20. After fitting each model, we use it to predict on the test documents and compute the accuracy.
+
+```{r}
+for(k in c(5,10,15,20)){
+  near = kknn(author~., #Formula (a point means that all covariates are used)
+              train = train_full, #Train matrix/df
+              test = test_full, #Test matrix/df
+              k=k, #Number of neighbors
+              kernel = "rectangular")
+  cat(paste0("k of ",k," has test set error of ",mean(near$fitted.values == test_full$author)), "\n")
+}
+```
+
+It looks like the model with a k of 5 performs the best, with almost 27% accuracy. This isn't great but it is much better than if the model just picked an author at random. The baseline accuracy in this situation is 1/50 or 2%. 27% is a definite improvement.
+
+Let's try a random forest model and see if it performs any better. We will use an mtry of 5 (this is how many variables it considers at each partition) and 500 trees as fairly standard parameters.
+
+```{r}
+set.seed(3)
+#had to add a suffix to variable names for some reason, randomforest was getting confused
+colnames(train_full) <- paste(colnames(train_full), "_rf", sep = "")
+rffit = randomForest(author_rf~.,
+                     data=train_full,
+                     mtry=5,
+                     ntree=500)
+
+colnames(test_full) <- paste(colnames(test_full), "_rf", sep = "")
+rfpred <- predict(rffit, test_full)
+mean(test_full$author_rf == rfpred)
+```
+
+The random forest model performs very well, achieving an accuracy of almost 60%. This is a massive improvement over the k-nearest-neighbors model. 
+
+Finally, let's fit a decision tree and compute its accuracy.
+
+
+```{r}
+Mtree <- rpart(author_rf~., data=train_full, method="class")
+treePred <- predict(Mtree, test_full[,-1], type="class")
+mean(test_full$author_rf == treePred)
+```
+
+The decision tree does not perform very well unfortunately, achieving an accuracy of only about 24% on the test dataset.
+
+##### Author Attribution Conclusions
+
+Creating a model to predict the author of articles is no easy task. Just the preprocessing itself is fairly tedious. However, once the data is laid out to where the author is paired with the tf-idf values for that document, creating predictive models is a less arduous task. My model disregards words that appear in the test dataset that didn't appear in the train dataset (after preprocessing) and this could have led to a compromise in accuracy. However, the random forest model still performs very well, with an accuracy of almost 60%. When compared to the baseline accuracy of a naive model of just 2%, this is a great improvement. KNN and decision tree based models perform worse, though.  The KNN model achieved an accuracy of 27% while decision tree had an accuracy of about 24%. These are still improvement over a random guess, however, so all models did bring some predictive power.
+
 ## Association Rule Mining
 
-Let's take a look at grocery baskets and see if we can find any useful associations. We will look for all rules with a support over 0.005, a confidence of at least 0.1, and a maximum length of 5. The support level means that the items in the rule must appear in at least .5% of grocery baskets. We set this level so that we see rules that are useful and insightful and not very rare purchases. If we wanted to place products based on these rules, we would not want to make decisions on what a very small fraction of customers (less than 0.5%) want. Next, the confidence of at least 0.15 means that at least 15% of customers that buy the product(s) on the left hand side of the rule will buy the product(s) on the right hand side. We set this for a similar reason: we want meaningful correlations. Finally, we set the maximum length to 4 to limit the basket size. It's a lot harder to interpret and gather insights from very large baskets, so we would prefer to only be looking at a few items every time.
+Let's take a look at grocery baskets and see if we can find any useful associations. We will look for all rules with a support over 0.005, a confidence of at least 0.1, and a maximum length of 4. The support level means that the items in the rule must appear in at least .5% of grocery baskets. We set this level so that we see rules that are useful and insightful and not very rare purchases. If we wanted to place products based on these rules, we would not want to make decisions on what a very small fraction of customers (less than 0.5%) want. Next, the confidence of at least 0.15 means that at least 15% of customers that buy the product(s) on the left hand side of the rule will buy the product(s) on the right hand side. We set this for a similar reason: we want meaningful correlations. Finally, we set the maximum length to 4 to limit the basket size. It's a lot harder to interpret and gather insights from very large baskets, so we would prefer to only be looking at a few items every time.
 
 ```{r}
 groceries <- read.transactions("groceries.txt", header = FALSE, sep=",")
@@ -466,7 +611,7 @@ Looks like we end with 1162 rules. Let's take a look at some of the most common 
 
 ```{r}
 topsupport <- sort(groceryrules, decreasing = TRUE, by = "support")
-inspect(head(topsupport,10))
+arules::inspect(head(topsupport,10))
 ```
 
 Looks like the most common basket is one containing whole milk. Over 25% of consumers purchase whole milk!
@@ -476,14 +621,14 @@ Let's take a look at some of the high confidence rules.
 
 ```{r}
 topconf <- sort(groceryrules, decreasing = TRUE, by = "confidence")
-inspect(head(topconf,10))
+arules::inspect(head(topconf,10))
 ```
 
 These rules provide some interesting insights that could definitely help a store place products. For example, the fifth rule tells us that when a customer buys butter and yogurt, they also buy whole milk almost 64% of the time. The lift tells us that there's a 250% increase in expectation that someone will buy milk if we know that they have butter and yogurt in their cart. Stores should probably keep these products close together. We can notice that all 10 of these rules contain whole milk. This is because people buy whole milk a lot; we already saw that when looking at the highest support rules. In order to get the most interesting and actionable insights, we should look at some of the rules with the highest lift.
 
 ```{r}
 toplift <- sort(groceryrules, decreasing = TRUE, by = "lift")
-inspect(head(toplift,10))
+arules::inspect(head(toplift,10))
 ```
 
 Now we're seeing some really interesting associations. The highest-lift rule tells us that there's a 464% increase in expectation that someone will buy white bread if they buy ham. This makes sense as they're probably gonna make a lunch sandwich. The 4th rule tells us that there's a 395% increase in expectation that someone will buy root vegetables if they buy herbs. They're probably going to make a vegetable focused dinner. The 6th rule reveals that there is a 379% increase in expectation that someone will buy whipped/sour cream if they buy berries. These customers are likely on their way to make a parfait! This grocery store would be wise to position items in the baskets on this list close together so that there is as little friction as possible for customers to get what they need. It might also spark the thoughts of customers who weren't even looking for those items. For example, if a customer walked buy some ham and white bread next to each other, it might jog their memory that they need a lunch for work next week.
@@ -501,4 +646,4 @@ As seen in the image above, there are definitely some distinct clusters appearin
 
 ![Graph of Grocery Rules with Labels](graphpic2.png)
 
-We can now see that the two biggest clusters are centered on whole milk and other vegetables. This is to be expected as these two items were present in many of the baskets. The medium-sized clusters include one with yogurt, one with tropical fruit, one with root vegetables, and one with rolls/buns. Some smaller clusters include sausage, sodas, whipped/sour cream and bottled water. This graph gives us a good view of which items are popular and important in the grocery store. The bigger the text label, the higher the degree of the node, meaning the more association rules it is a part of. Also the position of the items reveals some insights as well. Fruit is close to both yogurt and whipped/sour cream indicating that it is often purchased with those items. This is due to people making parfaits and similar meals. Rolls/buns is close to the meat cluster and the soda cluster. This is a class American meal. Vegetables are fairly close to fruit as well as signify a likely association among health-conscious shoppers. Overall, looking at support/confidence/lift and the accompanying graph visualization can really help this grocery store decide how to advertise to its consumers and position items within the store to make sure customers can know and easily get to what they need.
+We can now see that the two biggest clusters are centered on whole milk and other vegetables. This is to be expected as these two items were present in many of the baskets. The medium-sized clusters include one with yogurt, one with tropical fruit, one with root vegetables, and one with rolls/buns. Some smaller clusters include sausage, sodas, whipped/sour cream and bottled water. This graph gives us a good view of which items are popular and important in the grocery store. The bigger the text label, the higher the degree of the node, meaning the more association rules it is a part of. Also the position of the items reveals some insights as well. Fruit is close to both yogurt and whipped/sour cream indicating that it is often purchased with those items. This is due to people making parfaits and similar meals. Rolls/buns is close to the meat cluster and the soda cluster. This is a classic American meal. Vegetables are fairly close to fruit as well as signify a likely association among health-conscious shoppers. Overall, looking at support/confidence/lift and the accompanying graph visualization can really help this grocery store decide how to advertise to its consumers and position items within the store to make sure customers can know and easily get to what they need.
