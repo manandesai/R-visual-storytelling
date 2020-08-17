@@ -112,8 +112,6 @@ buildings. This should visually lead us to the same conclusion that the
 
     ggplot(green, aes(x=Rent)) + geom_density(aes(fill=green_rating), alpha=0.25) + geom_vline(xintercept = median(green[which(green$green_rating == 0),]$Rent), color = "red", linetype = "dashed") + geom_vline(xintercept = median(green[which(green$green_rating == 1),]$Rent), color = "blue", linetype = "dashed") + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating", subtitle = "With Dashed Line Median") + labs(caption = paste0("Difference of medians: ", median(green[which(green$green_rating == 1),]$Rent) - median(green[which(green$green_rating == 0),]$Rent)))
 
-    ## Warning: Removed 19 rows containing non-finite values (stat_density).
-
 ![](Exercises_files/figure-markdown_strict/unnamed-chunk-4-1.png)
 
 We can indeed see that when just looking at green rating, it does appear
@@ -139,8 +137,6 @@ but split up by each class.
 
     ggplot(green, aes(x=Rent)) + geom_density(aes(fill=green_rating), alpha=0.25) + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating for each Class") + facet_wrap(~Class, ncol=3) # + geom_vline(aes(xintercept = med, group = Class))
 
-    ## Warning: Removed 19 rows containing non-finite values (stat_density).
-
 ![](Exercises_files/figure-markdown_strict/unnamed-chunk-5-1.png)
 
 The plots show that for class A and B, the rent density plots are fairly
@@ -153,12 +149,6 @@ Let’s look at the histogram version to see if there is anything strange
 quantity-related.
 
     ggplot(green, aes(x=Rent)) + geom_histogram(aes(fill=green_rating), alpha=0.25) + xlim(0,125) + ggtitle("Rent Density Plot by Green Rating for each Class") + facet_wrap(~Class, ncol=3)
-
-    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
-
-    ## Warning: Removed 19 rows containing non-finite values (stat_bin).
-
-    ## Warning: Removed 12 rows containing missing values (geom_bar).
 
 ![](Exercises_files/figure-markdown_strict/unnamed-chunk-6-1.png)
 
@@ -197,12 +187,6 @@ size and class.
 
     green$sizeCat <- (cut_number(green$size, 3, labels = c("small", "medium", "large")))
     ggplot(green, aes(x=Rent)) + geom_histogram(aes(fill=green_rating), alpha=0.25) + xlim(0,100) + ggtitle("Rent Density Plot by Green Rating for each Class and Size") + facet_wrap(Class~sizeCat, ncol=3)
-
-    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
-
-    ## Warning: Removed 26 rows containing non-finite values (stat_bin).
-
-    ## Warning: Removed 36 rows containing missing values (geom_bar).
 
 ![](Exercises_files/figure-markdown_strict/unnamed-chunk-8-1.png)
 
@@ -369,8 +353,6 @@ afternoon (12PM to 6PM), and night (6PM to Midnight).
     delayAustin$DepPeriod <- factor(delayAustin$DepPeriod, levels = c("Early Morning", "Morning", "Afternoon", "Night"), ordered = TRUE)
     ggplot(delayAustin, aes(DepPeriod, DepDelay)) + geom_boxplot(varwidth=T, fill="plum") + xlab("Time of Day") + ylab("Delay") + ggtitle("Flight Delays by Airline Boxplot") + ylim(0,500)
 
-    ## Warning: Removed 2 rows containing non-finite values (stat_boxplot).
-
 ![](Exercises_files/figure-markdown_strict/unnamed-chunk-18-1.png)
 
 Early morning really doesn’t have enough flights to make a statement
@@ -511,22 +493,6 @@ into three portfolio matrices for future sampling.
     alltickers = c(portfolio1, portfolio2, portfolio3)
     getSymbols(alltickers)
 
-    ## 'getSymbols' currently uses auto.assign=TRUE by default, but will
-    ## use auto.assign=FALSE in 0.5-0. You will still be able to use
-    ## 'loadSymbols' to automatically load data. getOption("getSymbols.env")
-    ## and getOption("getSymbols.auto.assign") will still be checked for
-    ## alternate defaults.
-    ## 
-    ## This message is shown once per session and may be disabled by setting 
-    ## options("getSymbols.warning4.0"=FALSE). See ?getSymbols for details.
-
-    ## pausing 1 second between requests for more than 5 symbols
-    ## pausing 1 second between requests for more than 5 symbols
-    ## pausing 1 second between requests for more than 5 symbols
-    ## pausing 1 second between requests for more than 5 symbols
-    ## pausing 1 second between requests for more than 5 symbols
-    ## pausing 1 second between requests for more than 5 symbols
-
     ##  [1] "VTI"  "VXUS" "BND"  "VGT"  "VOX"  "VCR"  "PSI"  "VHT"  "XBI"  "IXJ"
 
     #adjust for open, closing, split, dividends, etc for all stocks
@@ -534,106 +500,6 @@ into three portfolio matrices for future sampling.
         expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
         eval(parse(text=expr))
     }
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VTI?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VTI?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/VXUS?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VXUS?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/BND?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/BND?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/VGT?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/VGT?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VOX?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/VOX?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VCR?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/VCR?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/PSI?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/PSI?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VHT?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/VHT?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/XBI?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/XBI?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query2.finance.yahoo.com/v7/finance/download/IXJ?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
-
-    ## Warning in read.table(file = file, header = header, sep = sep,
-    ## quote = quote, : incomplete final line found by readTableHeader
-    ## on 'https://query1.finance.yahoo.com/v7/finance/download/IXJ?
-    ## period1=-2208988800&period2=1597536000&interval=1d&events=split&crumb=tKXqnvUuyex'
 
     #We only want the data for the past 5 years
     alltickersa = c()
@@ -864,11 +730,6 @@ to create an elbow plot to find an optimal number of clusters.
       cluster_k = kmeans(smark_scaled,k,nstart=25)
       cluster_k$tot.withinss
     }
-
-    ## Warning: did not converge in 10 iterations
-
-    ## Warning: did not converge in 10 iterations
-
     plot(k_grid, SSE_grid)
 
 ![](Exercises_files/figure-markdown_strict/unnamed-chunk-29-1.png)
@@ -1007,24 +868,7 @@ as the first column.
       tm_map(content_transformer(removeNumbers)) %>%      
       tm_map(content_transformer(removePunctuation)) %>%  
       tm_map(content_transformer(stripWhitespace)) 
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(tolower)):
-    ## transformation drops documents
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(removeNumbers)):
-    ## transformation drops documents
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(removePunctuation)):
-    ## transformation drops documents
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(stripWhitespace)):
-    ## transformation drops documents
-
     my_documents_train = tm_map(my_documents_train, content_transformer(removeWords), stopwords("en"))
-
-    ## Warning in tm_map.SimpleCorpus(my_documents_train,
-    ## content_transformer(removeWords), : transformation drops documents
-
     DTM_train = DocumentTermMatrix(my_documents_train)
     DTM_train = removeSparseTerms(DTM_train, 0.95)
     tfidf_train = as.matrix(weightTfIdf(DTM_train))
@@ -1083,24 +927,7 @@ document was a fair compromise.
       tm_map(content_transformer(removeNumbers)) %>%      
       tm_map(content_transformer(removePunctuation)) %>%  
       tm_map(content_transformer(stripWhitespace)) 
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(tolower)):
-    ## transformation drops documents
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(removeNumbers)):
-    ## transformation drops documents
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(removePunctuation)):
-    ## transformation drops documents
-
-    ## Warning in tm_map.SimpleCorpus(., content_transformer(stripWhitespace)):
-    ## transformation drops documents
-
     my_documents_test = tm_map(my_documents_test, content_transformer(removeWords), stopwords("en"))
-
-    ## Warning in tm_map.SimpleCorpus(my_documents_test,
-    ## content_transformer(removeWords), : transformation drops documents
-
     DTM_test = DocumentTermMatrix(my_documents_test)
     DTM_test = removeSparseTerms(DTM_test, 0.98)
     tfidf_test = as.matrix(weightTfIdf(DTM_test))
@@ -1225,13 +1052,7 @@ at a few items every time.
     ## set transactions ...[169 item(s), 9835 transaction(s)] done [0.00s].
     ## sorting and recoding items ... [120 item(s)] done [0.00s].
     ## creating transaction tree ... done [0.00s].
-    ## checking subsets of size 1 2 3 4
-
-    ## Warning in apriori(groceries, parameter = list(support = 0.005, confidence
-    ## = 0.15, : Mining stopped (maxlen reached). Only patterns up to a length of
-    ## 4 returned!
-
-    ##  done [0.00s].
+    ## checking subsets of size 1 2 3 4 done [0.00s].
     ## writing ... [1162 rule(s)] done [0.00s].
     ## creating S4 object  ... done [0.00s].
 
